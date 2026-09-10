@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest } from '@/lib/supabase/server'
 import { generateProductImages, type ProductImageParams } from '@/lib/image-generator'
+import { scrapeProductUrl, isProductPageUrl } from '@/lib/product-scraper'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,20 +21,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Body inválido' }, { status: 400 })
   }
 
-  const productName = (body.productName || '').trim()
-  const description = (body.productDescription || '').trim()
+  let productName = (body.productName || '').trim()
+  let description = (body.productDescription || '').trim()
+  let imageUrl = (body.imageUrl || '').trim()
+
+  // Se enviou URL de produto (ex: shopee/ml) sem nome/descrição, tenta scraping
+  if (isProductPageUrl(imageUrl)) {
+    if (!productName && !description) {
+      const scraped = await scrapeProductUrl(imageUrl)
+      if (scraped.title) productName = scraped.title
+      if (scraped.description) description = scraped.description
+    }
+    // fallback quando scraping falha (ex: Shopee JS-render): usa slug da URL ou marketplace
+    if (!productName && !description) {
+      try {
+        const urlObj = new URL(imageUrl)
+        const slug = urlObj.pathname.split('/').filter(Boolean).pop() || ''
+        const pretty = decodeURIComponent(slug).replace(/[-_]/g, ' ').slice(0, 80)
+        const marketplaceHint = (body.marketplace || '').trim() || urlObj.hostname.replace('www.', '')
+        productName = pretty || `Produto ${marketplaceHint}`
+        description = `Produto do marketplace ${marketplaceHint}` + (pretty ? `: ${pretty}` : '')
+      } catch {
+        productName = 'Produto'
+        description = 'Produto para geração de imagem'
+      }
+    }
+  }
+
+  // Fallback para foto enviada sem nome/descrição
+  if (!productName && !description && imageUrl) {
+    // imageUrl é foto do Storage (supabase) -> usar nome genérico com estilo
+    productName = 'Produto enviado'
+    description = `Produto fotografia ${body.style || 'profissional'} para ${body.marketplace || 'marketplace'}`
+  }
 
   if (!productName && !description) {
-    return NextResponse.json({ error: 'Informe o nome ou descrição do produto' }, { status: 400 })
+    return NextResponse.json({ error: 'Informe o nome/descrição ou URL do produto / envie uma foto' }, { status: 400 })
   }
 
   const params: ProductImageParams = {
-    productName,
-    productDescription: description,
+    productName: productName || 'Produto',
+    productDescription: description || productName,
     productCategory: (body.productCategory || '').trim(),
     marketplace: (body.marketplace || '').trim(),
     style: (body.style || 'professional').trim(),
-    imageUrl: (body.imageUrl || '').trim(),
+    imageUrl,
   }
 
   const { data: profile } = await supabase

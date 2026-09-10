@@ -25,13 +25,13 @@ import {
   CreditCard,
   Menu,
   X,
+  Film,
 } from 'lucide-react'
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-  { icon: ImageIcon, label: 'Imagens', href: '/dashboard/images' },
-  { icon: User, label: 'Modelos Virtuais', href: '/dashboard/models' },
-  { icon: Video, label: 'Videos', href: '/dashboard/videos' },
+  { icon: Film, label: 'Gerar Vídeo IA', href: '/dashboard/pipeline' },
+  { icon: User, label: 'Modelos', href: '/dashboard/models' },
   { icon: FileText, label: 'Copywriting', href: '/dashboard/copywriting' },
   { icon: Layout, label: 'Templates', href: '/dashboard/templates' },
   { icon: TrendingUp, label: 'Trending', href: '/dashboard/trending' },

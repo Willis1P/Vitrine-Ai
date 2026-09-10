@@ -86,27 +86,50 @@ function pollinationsUrl(prompt: string, seed: number): string {
   return `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&model=flux&seed=${seed}&nocache=${cacheBust}`
 }
 
-async function fetchImage(url: string): Promise<string> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-  try {
-    const response = await fetch(url, { signal: controller.signal })
-    if (!response.ok) {
+async function fetchImage(url: string, retries = 2): Promise<string> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      if (response.ok) {
+        await response.body?.cancel()
+        return url
+      }
+      // 429 = rate limit -> backoff antes de retry
+      if (response.status === 429 && attempt < retries) {
+        await response.body?.cancel().catch(() => {})
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1) + Math.random() * 1000))
+        continue
+      }
       throw new Error(`Falha ao gerar imagem (status ${response.status})`)
+    } catch (e: any) {
+      if (e?.name === 'AbortError' && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1000))
+        continue
+      }
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+        continue
+      }
+      throw e
+    } finally {
+      clearTimeout(timer)
     }
-    await response.body?.cancel()
-  } finally {
-    clearTimeout(timer)
   }
-  return url
+  throw new Error('Falha ao gerar imagem após retries')
 }
 
 async function generateWithFallback(url: string, fallbackUrl: string): Promise<string> {
   try {
-    return await fetchImage(url)
+    return await fetchImage(url, 2)
   } catch {
-    return fetchImage(fallbackUrl)
+    return fetchImage(fallbackUrl, 2)
   }
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
 function buildProductImagePrompt(params: ProductImageParams, index: number): string {
@@ -116,8 +139,11 @@ function buildProductImagePrompt(params: ProductImageParams, index: number): str
   const marketplace = params.marketplace ? `for ${params.marketplace} marketplace` : ''
   const styleScene = STYLE_SCENES[params.style || 'professional'] || STYLE_SCENES.professional
   const variation = IMAGE_VARIATIONS[index % IMAGE_VARIATIONS.length]
+  const referenceHint = params.imageUrl && params.imageUrl.startsWith('http')
+    ? ` Reference image provided - keep product appearance faithful to original.`
+    : ''
 
-  return `${styleScene}, ${variation}. Product: ${name}${category ? `, ${category}` : ''} ${marketplace}. ${desc}. Photorealistic, high resolution, sharp details, vibrant natural colors, e-commerce photography`
+  return `${styleScene}, ${variation}. Product: ${name}${category ? `, ${category}` : ''} ${marketplace}. ${desc}.${referenceHint} Photorealistic, high resolution, sharp details, vibrant natural colors, e-commerce photography`
 }
 
 function buildModelPrompt(params: VirtualModelParams, index: number): string {
@@ -137,28 +163,29 @@ export async function generateProductImages(
   count: number = 4
 ): Promise<GeneratedImageUrl[]> {
   const baseSeed = Math.floor(Date.now() % 100000)
-
-  return Promise.all(
-    Array.from({ length: count }, async (_, i) => {
-      const prompt = buildProductImagePrompt(params, i)
-      const url = pollinationsUrl(prompt, baseSeed + i)
-      const fallbackUrl = pollinationsUrl(prompt, baseSeed + 1000 + i)
-      const finalUrl = await generateWithFallback(url, fallbackUrl)
-      return { url: finalUrl }
-    })
-  )
+  const results: GeneratedImageUrl[] = []
+  // Sequencial com delay para evitar 429 no Pollinations
+  for (let i = 0; i < count; i++) {
+    const prompt = buildProductImagePrompt(params, i)
+    const url = pollinationsUrl(prompt, baseSeed + i)
+    const fallbackUrl = pollinationsUrl(prompt, baseSeed + 1000 + i)
+    const finalUrl = await generateWithFallback(url, fallbackUrl)
+    results.push({ url: finalUrl })
+    if (i < count - 1) await sleep(1200 + Math.random() * 800)
+  }
+  return results
 }
 
 export async function generateVirtualModels(params: VirtualModelParams, count: number = 3): Promise<GeneratedImageUrl[]> {
   const baseSeed = Math.floor(Date.now() % 100000)
-
-  return Promise.all(
-    Array.from({ length: count }, async (_, i) => {
-      const prompt = buildModelPrompt(params, i)
-      const url = pollinationsUrl(prompt, baseSeed + i)
-      const fallbackUrl = pollinationsUrl(prompt, baseSeed + 1000 + i)
-      const finalUrl = await generateWithFallback(url, fallbackUrl)
-      return { url: finalUrl }
-    })
-  )
+  const results: GeneratedImageUrl[] = []
+  for (let i = 0; i < count; i++) {
+    const prompt = buildModelPrompt(params, i)
+    const url = pollinationsUrl(prompt, baseSeed + i)
+    const fallbackUrl = pollinationsUrl(prompt, baseSeed + 1000 + i)
+    const finalUrl = await generateWithFallback(url, fallbackUrl)
+    results.push({ url: finalUrl })
+    if (i < count - 1) await sleep(1200 + Math.random() * 800)
+  }
+  return results
 }

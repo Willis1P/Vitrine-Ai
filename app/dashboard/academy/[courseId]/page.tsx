@@ -63,7 +63,7 @@ export default function CoursePlayerPage() {
           .select('completed_lessons')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
-          .single()
+          .maybeSingle()
 
         if (progressData?.completed_lessons) {
           setCompletedSet(new Set(progressData.completed_lessons))

@@ -89,6 +89,9 @@ export default function ImagesPage() {
   const [inputMethod, setInputMethod] = useState<'upload' | 'url' | 'describe'>('describe')
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [history, setHistory] = useState<any[]>([])
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -117,6 +120,45 @@ export default function ImagesPage() {
     return data.session?.access_token || ''
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Maximo 10MB", variant: "destructive" })
+      return
+    }
+    setUploadedFile(file)
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+    // auto-sugere nome se vazio
+    if (!productName) {
+      const nameFromFile = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+      setProductName(nameFromFile.slice(0, 80))
+    }
+  }
+
+  const uploadImageToStorage = async (): Promise<string | null> => {
+    if (!uploadedFile || !user) return null
+    setIsUploading(true)
+    try {
+      const ext = uploadedFile.name.split('.').pop() || 'jpg'
+      const path = `uploads/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const { error } = await supabase.storage.from('vittrine-images').upload(path, uploadedFile, {
+        cacheControl: '3600',
+        upsert: false,
+      })
+      if (error) throw error
+      const { data } = supabase.storage.from('vittrine-images').getPublicUrl(path)
+      return data.publicUrl
+    } catch (err: any) {
+      console.error('upload error', err)
+      toast({ title: "Erro no upload", description: err.message || "Falha ao enviar foto", variant: "destructive" })
+      return null
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   const handleGenerate = async () => {
     if (!user) {
       toast({
@@ -136,7 +178,8 @@ export default function ImagesPage() {
       return
     }
 
-    if (!productName && !productDescription) {
+    // Validação por método: describe precisa nome/desc, url precisa URL, upload precisa foto
+    if (inputMethod === 'describe' && !productName && !productDescription) {
       toast({
         title: "Campo obrigatorio",
         description: "Por favor, descreva seu produto",
@@ -144,11 +187,31 @@ export default function ImagesPage() {
       })
       return
     }
+    if (inputMethod === 'url' && !productUrl) {
+      toast({ title: "URL obrigatoria", description: "Cole a URL do produto", variant: "destructive" })
+      return
+    }
+    if (inputMethod === 'upload' && !uploadedFile) {
+      toast({ title: "Foto obrigatoria", description: "Selecione uma foto do produto", variant: "destructive" })
+      return
+    }
+    // url/upload também precisam pelo menos alguma descrição depois; será resolvido no backend via scraping
 
     setLoading(true)
 
     try {
       const token = await getAccessToken()
+
+      // Se for upload, envia para Storage antes
+      let finalImageUrl = productUrl
+      if (inputMethod === 'upload' && uploadedFile) {
+        const uploadedUrl = await uploadImageToStorage()
+        if (!uploadedUrl) {
+          setLoading(false)
+          return
+        }
+        finalImageUrl = uploadedUrl
+      }
 
       const response = await fetch('/api/v1/images/generate', {
         method: 'POST',
@@ -162,7 +225,7 @@ export default function ImagesPage() {
           productCategory: selectedCategory,
           marketplace: selectedMarketplace,
           style: selectedStyle,
-          imageUrl: productUrl,
+          imageUrl: finalImageUrl,
         }),
       })
 
@@ -189,6 +252,19 @@ export default function ImagesPage() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteHistory = async (id: string) => {
+    if (!confirm('Excluir esta imagem do histórico?')) return
+    const prev = history
+    setHistory((h) => h.filter((item) => item.id !== id))
+    const { error } = await supabase.from('generated_content').delete().eq('id', id)
+    if (error) {
+      setHistory(prev)
+      toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" })
+    } else {
+      toast({ title: "Excluída", description: "Imagem removida do histórico" })
     }
   }
 
@@ -303,17 +379,34 @@ export default function ImagesPage() {
 
               <TabsContent value="upload" className="space-y-4 mt-4">
                 <div className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center hover:border-slate-600 transition-colors">
-                  <Upload className="w-10 h-10 text-slate-500 mx-auto mb-4" />
-                  <p className="text-slate-400 mb-2">Arraste uma imagem ou clique para enviar</p>
-                  <p className="text-xs text-slate-500">PNG, JPG ate 10MB</p>
-                  <input type="file" accept="image/*" className="hidden" id="image-upload" />
-                  <Button
-                    variant="outline"
-                    className="mt-4 border-slate-700 text-slate-300"
-                    onClick={() => document.getElementById('image-upload')?.click()}
-                  >
-                    Selecionar arquivo
-                  </Button>
+                  {previewUrl ? (
+                    <div className="space-y-3">
+                      <img src={previewUrl} alt="Preview" className="w-40 h-40 object-cover rounded-xl mx-auto border border-slate-600" />
+                      <p className="text-sm text-emerald-400 flex items-center justify-center gap-1"><CheckCircle2 className="w-4 h-4" /> {uploadedFile?.name}</p>
+                      <Button variant="ghost" size="sm" className="text-slate-400" onClick={() => { setUploadedFile(null); setPreviewUrl(null); }}>
+                        <Trash2 className="w-4 h-4 mr-1" /> Remover
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-10 h-10 text-slate-500 mx-auto mb-4" />
+                      <p className="text-slate-400 mb-2">Arraste uma imagem ou clique para enviar</p>
+                      <p className="text-xs text-slate-500">PNG, JPG ate 10MB</p>
+                    </>
+                  )}
+                  <input type="file" accept="image/*" className="hidden" id="image-upload" onChange={handleFileChange} />
+                  {!previewUrl && (
+                    <Button
+                      variant="outline"
+                      className="mt-4 border-slate-700 text-slate-300"
+                      onClick={() => document.getElementById('image-upload')?.click()}
+                    >
+                      Selecionar arquivo
+                    </Button>
+                  )}
+                  {previewUrl && (
+                    <p className="text-xs text-slate-500 mt-2">A foto será usada como referência para manter a fidelidade do produto</p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
@@ -397,12 +490,12 @@ export default function ImagesPage() {
             <Button
               className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold h-12"
               onClick={handleGenerate}
-              disabled={loading || !hasCredits(1)}
+              disabled={loading || isUploading || !hasCredits(1)}
             >
-              {loading ? (
+              {loading || isUploading ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Gerando imagens...
+                  {isUploading ? 'Enviando foto...' : 'Gerando imagens...'}
                 </>
               ) : (
                 <>
@@ -495,7 +588,7 @@ export default function ImagesPage() {
                       </div>
                     )}
                   </div>
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-1">
                     {item.result_url && (
                       <Button
                         size="sm"
@@ -506,6 +599,15 @@ export default function ImagesPage() {
                         <Download className="w-4 h-4" />
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-white hover:bg-red-500/30 hover:text-red-300"
+                      onClick={() => handleDeleteHistory(item.id)}
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
