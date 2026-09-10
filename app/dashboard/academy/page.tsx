@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { supabase, Course, CourseLesson } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +29,7 @@ const MARKETPLACE_FOCUS = [
 
 export default function AcademyPage() {
   const { user, profile } = useAuth()
+  const router = useRouter()
   const [courses, setCourses] = useState<(Course & { lessons?: CourseLesson[], progress?: any })[]>([])
   const [selectedFocus, setSelectedFocus] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -203,6 +205,7 @@ export default function AcademyPage() {
                     className="w-full"
                     variant={hasAccess ? 'default' : 'outline'}
                     disabled={!hasAccess}
+                    onClick={() => hasAccess && router.push(`/dashboard/academy/${course.id}`)}
                   >
                     {hasAccess ? (
                       progressPercent > 0 ? 'Continuar' : 'Comecar Curso'

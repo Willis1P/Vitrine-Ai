@@ -50,7 +50,7 @@ const TONES = [
 ]
 
 export default function CopywritingPage() {
-  const { user, credits } = useAuth()
+  const { user, credits, unlimited, hasCredits, refreshCredits } = useAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [productName, setProductName] = useState('')
@@ -79,13 +79,18 @@ export default function CopywritingPage() {
     if (data) setHistory(data)
   }
 
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.access_token || ''
+  }
+
   const handleGenerate = async () => {
     if (!user) {
       toast({ title: "Erro", description: "Voce precisa estar logado", variant: "destructive" })
       return
     }
 
-    if (credits < 1) {
+    if (!hasCredits(1)) {
       toast({ title: "Creditos insuficientes", description: "Copywriting custa 1 credito", variant: "destructive" })
       return
     }
@@ -98,86 +103,33 @@ export default function CopywritingPage() {
     setLoading(true)
 
     try {
-      const { data: content, error: contentError } = await supabase
-        .from('generated_content')
-        .insert({
-          user_id: user.id,
-          type: 'copywriting',
-          product_name: productName,
-          prompt_used: productFeatures,
+      const token = await getAccessToken()
+
+      const response = await fetch('/api/v1/copywriting/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productName,
+          productFeatures,
+          targetAudience,
           marketplace: selectedMarketplace,
-          credits_used: 1,
-          status: 'processing',
-          result_data: {
-            content_type: selectedType,
-            tone: selectedTone,
-            target_audience: targetAudience
-          }
-        })
-        .select()
-        .single()
-
-      if (contentError) throw contentError
-
-      await supabase.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: 1,
-        type: 'usage',
-        description: `Copywriting: ${productName}`,
-        reference_type: 'copywriting',
-        reference_id: content.id
+          tone: selectedTone,
+          contentType: selectedType,
+        }),
       })
 
-      await new Promise(resolve => setTimeout(resolve, 2500))
+      const data = await response.json()
 
-      // Generate mock content
-      const marketplace = MARKETPLACES.find(m => m.id === selectedMarketplace)
-      const generated = {
-        title: `${productName} | Qualidade Premium + Frete Gratis | ${marketplace?.label || 'Marketplace'}`,
-        description: `DESCUBRA O MELHOR ${productName.toUpperCase()} DO MERCADO!
-
-Por que escolher nosso produto?
-
-Produtos de qualidade excepcional que vao transformar sua experiencia. Feito com materiais premium e acabamento impecavel.
-
-BENEFICIOS:
-- Alta durabilidade e resistencia
-- Design moderno e exclusivo
-- Facil de usar e manter
-- Entrega rapida garantida
-- Garantia de satisfacao
-
-CARACTERISTICAS:
-${productFeatures || 'Produto novo, original e com garantia do fabricante.'}
-
-Nao perca essa oportunidade! Compre agora e aproveite condicoes especiais.
-
-${targetAudience ? `Perfeito para: ${targetAudience}` : ''}
-
-Envio imediato! Aproveite!`,
-        bullets: [
-          'Qualidade premium garantida',
-          'Frete gratis para todo Brasil',
-          'Entrega rapida em ate 5 dias',
-          'Garantia de 30 dias',
-          'Suporte ao cliente 24/7',
-          'Produto original e lacrado'
-        ],
-        hashtags: [
-          `#${productName.replace(/\s+/g, '').toLowerCase()}`,
-          '#oferta', '#fretegratis', '#qualidadepremium', '#promocao',
-          `#${selectedMarketplace}`, '#compraonline', '#melhorpreco'
-        ],
-        cta: 'CLIQUE EM COMPRAR AGORA!'
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar copywriting')
       }
 
-      await supabase
-        .from('generated_content')
-        .update({ status: 'completed', result_data: { ...content.result_data, generated } })
-        .eq('id', content.id)
-
-      setGeneratedContent(generated)
+      setGeneratedContent(data.generated)
       fetchHistory()
+      refreshCredits()
 
       toast({ title: "Conteudo gerado!", description: "Copywriting criado com sucesso" })
     } catch (error: any) {
@@ -208,8 +160,14 @@ Envio imediato! Aproveite!`,
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
           <Zap className="w-5 h-5 text-orange-400" />
-          <span className="text-white font-semibold">{credits}</span>
-          <span className="text-slate-400 text-sm">creditos</span>
+          {unlimited ? (
+            <span className="text-white font-semibold text-cyan-400">Ilimitado</span>
+          ) : (
+            <>
+              <span className="text-white font-semibold">{credits}</span>
+              <span className="text-slate-400 text-sm">creditos</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -299,17 +257,17 @@ Envio imediato! Aproveite!`,
             <Button
               className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-semibold h-12"
               onClick={handleGenerate}
-              disabled={loading || credits < 1 || !productName}
+              disabled={loading || !hasCredits(1) || !productName}
             >
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Gerando conteudo...
+                  Gerando copy...
                 </>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 mr-2" />
-                  Gerar Copywriting (1 credito)
+                  Gerar Copywriting {unlimited ? '(Ilimitado)' : '(1 credito)'}
                 </>
               )}
             </Button>

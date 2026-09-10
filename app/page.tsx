@@ -295,37 +295,54 @@ export default function HomePage() {
               <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
               <div className="w-3 h-3 rounded-full bg-green-500/80" />
             </div>
-            <div className="aspect-video bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
-              <div className="text-center p-8">
-                <div className="inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-slate-800/50 border border-slate-700 mb-6">
-                  <ShoppingCart className="w-8 h-8 text-emerald-400" />
-                  <div className="text-left">
-                    <p className="text-white font-medium">Vestido Feminino Floral</p>
-                    <p className="text-slate-400 text-sm">Moda Feminina</p>
+            <div className="aspect-video bg-gradient-to-br from-slate-800 to-slate-900 p-6 md:p-10">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 h-full">
+                <div className="relative rounded-xl overflow-hidden group">
+                  <img
+                    src="https://mlqawjbdufvcxtijfhip.supabase.co/storage/v1/object/public/vittrine-images/hero/hero-dress.png"
+                    alt="Foto de produto profissional"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute bottom-3 left-3">
+                    <p className="text-white text-xs font-medium">Foto de Produto</p>
+                    <p className="text-emerald-400 text-[10px]">Shopee</p>
                   </div>
                 </div>
-                <div className="flex items-center justify-center gap-4">
-                  <ChevronRight className="w-6 h-6 text-slate-600" />
-                  <div className="px-6 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-                    <p className="text-emerald-400 text-sm">Objetivo: Aumentar Conversao</p>
-                  </div>
-                  <ChevronRight className="w-6 h-6 text-slate-600" />
-                  <div className="px-6 py-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30">
-                    <p className="text-cyan-400 text-sm">Marketplace: Shopee</p>
+                <div className="relative rounded-xl overflow-hidden group">
+                  <img
+                    src="https://mlqawjbdufvcxtijfhip.supabase.co/storage/v1/object/public/vittrine-images/hero/hero-beauty.png"
+                    alt="Kit de beleza profissional"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute bottom-3 left-3">
+                    <p className="text-white text-xs font-medium">Beleza</p>
+                    <p className="text-cyan-400 text-[10px]">Amazon</p>
                   </div>
                 </div>
-                <div className="mt-8 flex items-center justify-center gap-6">
-                  <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center">
-                    <ImageIcon className="w-8 h-8 text-emerald-400" />
+                <div className="relative rounded-xl overflow-hidden group">
+                  <img
+                    src="https://mlqawjbdufvcxtijfhip.supabase.co/storage/v1/object/public/vittrine-images/hero/hero-tech.png"
+                    alt="Produto de tecnologia"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute bottom-3 left-3">
+                    <p className="text-white text-xs font-medium">Eletronicos</p>
+                    <p className="text-violet-400 text-[10px]">TikTok</p>
                   </div>
-                  <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center">
-                    <Video className="w-8 h-8 text-violet-400" />
-                  </div>
-                  <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-cyan-400" />
-                  </div>
-                  <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30 flex items-center justify-center">
-                    <User className="w-8 h-8 text-orange-400" />
+                </div>
+                <div className="relative rounded-xl overflow-hidden group">
+                  <img
+                    src="https://mlqawjbdufvcxtijfhip.supabase.co/storage/v1/object/public/vittrine-images/hero/hero-fashion.png"
+                    alt="Acessorios de moda"
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute bottom-3 left-3">
+                    <p className="text-white text-xs font-medium">Acessorios</p>
+                    <p className="text-orange-400 text-[10px]">ML</p>
                   </div>
                 </div>
               </div>

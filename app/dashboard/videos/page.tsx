@@ -45,7 +45,7 @@ const VIDEO_STYLES = [
 ]
 
 export default function VideosPage() {
-  const { user, credits } = useAuth()
+  const { user, credits, unlimited, hasCredits, refreshCredits } = useAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [productName, setProductName] = useState('')
@@ -69,9 +69,16 @@ export default function VideosPage() {
       .select('*')
       .eq('user_id', user.id)
       .eq('type', 'video')
+      .eq('status', 'completed')
+      .not('result_url', 'is', null)
       .order('created_at', { ascending: false })
       .limit(20)
     if (data) setHistory(data)
+  }
+
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.access_token || ''
   }
 
   const handleGenerate = async () => {
@@ -80,7 +87,7 @@ export default function VideosPage() {
       return
     }
 
-    if (credits < requiredCredits) {
+    if (!hasCredits(requiredCredits)) {
       toast({ title: "Creditos insuficientes", description: `Este video requer ${requiredCredits} creditos`, variant: "destructive" })
       return
     }
@@ -93,48 +100,36 @@ export default function VideosPage() {
     setLoading(true)
 
     try {
-      const { data: content, error: contentError } = await supabase
-        .from('generated_content')
-        .insert({
-          user_id: user.id,
-          type: 'video',
-          product_name: productName,
-          prompt_used: productDescription || productName,
-          credits_used: requiredCredits,
-          status: 'processing',
-          result_data: {
-            video_type: selectedType,
-            duration: selectedDuration,
-            style: selectedStyle
-          }
-        })
-        .select()
-        .single()
+      const token = await getAccessToken()
 
-      if (contentError) throw contentError
-
-      await supabase.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: requiredCredits,
-        type: 'usage',
-        description: `Video: ${productName || 'Produto'}`,
-        reference_type: 'video',
-        reference_id: content.id
+      const response = await fetch('/api/v1/videos/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productName,
+          productDescription,
+          videoType: selectedType,
+          duration: selectedDuration,
+          style: selectedStyle,
+        }),
       })
 
-      await new Promise(resolve => setTimeout(resolve, 4000))
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar video')
+      }
 
       const videos = [
-        { id: `${content.id}-1`, url: `https://picsum.photos/seed/vid${Date.now()}/1080/1920`, type: selectedType },
+        { id: data.id, url: data.result_url, type: selectedType },
       ]
-
-      await supabase
-        .from('generated_content')
-        .update({ status: 'completed', result_url: videos[0].url, result_data: { ...content.result_data, videos } })
-        .eq('id', content.id)
 
       setGeneratedVideos(videos)
       fetchHistory()
+      refreshCredits()
 
       toast({ title: "Video gerado!", description: "Video criado com sucesso" })
     } catch (error: any) {
@@ -158,8 +153,14 @@ export default function VideosPage() {
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
           <Zap className="w-5 h-5 text-violet-400" />
-          <span className="text-white font-semibold">{credits}</span>
-          <span className="text-slate-400 text-sm">creditos</span>
+          {unlimited ? (
+            <span className="text-white font-semibold text-cyan-400">Ilimitado</span>
+          ) : (
+            <>
+              <span className="text-white font-semibold">{credits}</span>
+              <span className="text-slate-400 text-sm">creditos</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -240,7 +241,7 @@ export default function VideosPage() {
             <Button
               className="w-full bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 text-white font-semibold h-12"
               onClick={handleGenerate}
-              disabled={loading || credits < requiredCredits}
+              disabled={loading || !hasCredits(requiredCredits)}
             >
               {loading ? (
                 <>
@@ -250,7 +251,7 @@ export default function VideosPage() {
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 mr-2" />
-                  Gerar Video ({requiredCredits} creditos)
+                  Gerar Video {unlimited ? '(Ilimitado)' : `(${requiredCredits} creditos)`}
                 </>
               )}
             </Button>
@@ -266,12 +267,16 @@ export default function VideosPage() {
             {generatedVideos.length > 0 ? (
               <div className="space-y-4">
                 <div className="aspect-[9/16] rounded-xl overflow-hidden bg-slate-800 max-w-xs mx-auto relative">
-                  <img src={generatedVideos[0].url} alt="Generated video" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-16 h-16 rounded-full bg-black/50 flex items-center justify-center">
-                      <Play className="w-8 h-8 text-white" />
-                    </div>
-                  </div>
+                  <video
+                    key={generatedVideos[0].url}
+                    src={generatedVideos[0].url}
+                    controls
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <Button className="w-full bg-violet-500 hover:bg-violet-600 text-white" onClick={() => {
                   const a = document.createElement('a')
@@ -293,6 +298,37 @@ export default function VideosPage() {
           </CardContent>
         </Card>
       </div>
+
+      {history.length > 0 && (
+        <Card className="bg-slate-900/50 border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-violet-400" />
+              Historico de Videos
+            </CardTitle>
+            <CardDescription>Seus videos gerados anteriormente</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              {history.map((item) => (
+                <div key={item.id} className="group relative rounded-xl overflow-hidden bg-slate-800 border border-slate-700 aspect-[9/16]">
+                  <video src={item.result_url} muted loop playsInline preload="metadata" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+                    <span className="text-xs text-white font-medium line-clamp-2">{item.product_name || 'Produto'}</span>
+                    <Button
+                      size="sm"
+                      className="mt-2 bg-violet-500 hover:bg-violet-600 text-white h-8 text-xs"
+                      onClick={() => setGeneratedVideos([{ id: item.id, url: item.result_url, type: (item.result_data as any)?.video_type || 'ugc' }])}
+                    >
+                      <Play className="w-3 h-3 mr-1" /> Ver
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

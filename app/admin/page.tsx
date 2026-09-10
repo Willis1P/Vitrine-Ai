@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Users,
@@ -17,12 +19,19 @@ import {
   Loader2,
   Settings,
   FileText,
+  UserPlus,
+  Gift,
+  CheckCircle2,
 } from 'lucide-react'
 
 export default function AdminPage() {
   const { user, profile } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [grantEmail, setGrantEmail] = useState('')
+  const [grantCredits, setGrantCredits] = useState('500')
+  const [granting, setGranting] = useState(false)
+  const [grantResult, setGrantResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalRevenue: 0,
@@ -68,6 +77,56 @@ export default function AdminPage() {
       console.error('Error fetching admin stats:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.access_token || ''
+  }
+
+  const handleGrant = async (action: 'activate_vitalicio' | 'add_credits') => {
+    const email = grantEmail.trim().toLowerCase()
+    if (!email) {
+      setGrantResult({ ok: false, message: 'Informe o email do usuário' })
+      return
+    }
+
+    setGranting(true)
+    setGrantResult(null)
+
+    try {
+      const token = await getAccessToken()
+      const response = await fetch('/api/v1/admin/grant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action,
+          email,
+          amount: action === 'add_credits' ? Number(grantCredits) : undefined,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao executar ação')
+      }
+
+      setGrantResult({
+        ok: true,
+        message:
+          action === 'activate_vitalicio'
+            ? `Plano Vitalício ativado! ${data.credits_added} créditos adicionados para ${email}`
+            : `${data.credits_added} créditos adicionados para ${email}`,
+      })
+    } catch (error: any) {
+      setGrantResult({ ok: false, message: error.message })
+    } finally {
+      setGranting(false)
     }
   }
 
@@ -162,6 +221,9 @@ export default function AdminPage() {
               <TabsTrigger value="content" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
                 <ShoppingCart className="w-4 h-4 mr-2" /> Conteudo
               </TabsTrigger>
+              <TabsTrigger value="credits" className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-400">
+                <Gift className="w-4 h-4 mr-2" /> Creditos
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="users">
@@ -234,6 +296,72 @@ export default function AdminPage() {
                     <FileText className="w-12 h-12 text-slate-600 mx-auto mb-3" />
                     <p className="text-slate-400">Historico detalhado em breve</p>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="credits">
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Gift className="w-5 h-5 text-emerald-400" />
+                    Conceder Creditos / Planos
+                  </CardTitle>
+                  <CardDescription>Ative o plano Vitalicio ou adicione creditos a um usuario por email</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Email do usuario</Label>
+                    <Input
+                      type="email"
+                      placeholder="usuario@email.com"
+                      value={grantEmail}
+                      onChange={(e) => setGrantEmail(e.target.value)}
+                      className="bg-slate-800 border-slate-700 text-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-300">Quantidade de creditos (para adicionar)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={grantCredits}
+                      onChange={(e) => setGrantCredits(e.target.value)}
+                      className="bg-slate-800 border-slate-700 text-white"
+                    />
+                  </div>
+
+                  {grantResult && (
+                    <div className={`flex items-center gap-2 p-3 rounded-lg ${
+                      grantResult.ok ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'
+                    }`}>
+                      {grantResult.ok && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+                      <p className={`text-sm ${grantResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>{grantResult.message}</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Button
+                      className="flex-1 bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 text-white font-semibold"
+                      onClick={() => handleGrant('activate_vitalicio')}
+                      disabled={granting}
+                    >
+                      <UserPlus className="w-4 h-4 mr-2" />
+                      {granting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Ativar Plano Vitalicio'}
+                    </Button>
+                    <Button
+                      className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+                      onClick={() => handleGrant('add_credits')}
+                      disabled={granting}
+                    >
+                      <Gift className="w-4 h-4 mr-2" />
+                      Adicionar Creditos
+                    </Button>
+                  </div>
+
+                  <p className="text-xs text-slate-500">
+                    O plano Vitalicio concede 500 creditos iniciais, sem expiracao, e cancela assinaturas anteriores do usuario.
+                  </p>
                 </CardContent>
               </Card>
             </TabsContent>

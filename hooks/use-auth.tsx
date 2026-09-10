@@ -10,6 +10,8 @@ interface AuthContextType {
   session: Session | null
   loading: boolean
   credits: number
+  unlimited: boolean
+  hasCredits: (required: number) => boolean
   refreshCredits: () => Promise<void>
   signOut: () => Promise<void>
 }
@@ -101,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     loading,
     credits,
+    unlimited: profile?.unlimited ?? false,
+    hasCredits: (required: number) => (profile?.unlimited ?? false) || credits >= required,
     refreshCredits,
     signOut
   }

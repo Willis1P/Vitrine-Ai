@@ -76,7 +76,7 @@ interface GeneratedImage {
 }
 
 export default function ImagesPage() {
-  const { user, credits } = useAuth()
+  const { user, credits, unlimited, hasCredits, refreshCredits } = useAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [productName, setProductName] = useState('')
@@ -112,6 +112,11 @@ export default function ImagesPage() {
     }
   }
 
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.access_token || ''
+  }
+
   const handleGenerate = async () => {
     if (!user) {
       toast({
@@ -122,7 +127,7 @@ export default function ImagesPage() {
       return
     }
 
-    if (credits < 1) {
+    if (!hasCredits(1)) {
       toast({
         title: "Creditos insuficientes",
         description: "Voce precisa de pelo menos 1 credito para gerar imagens",
@@ -143,77 +148,37 @@ export default function ImagesPage() {
     setLoading(true)
 
     try {
-      // Create content record
-      const { data: content, error: contentError } = await supabase
-        .from('generated_content')
-        .insert({
-          user_id: user.id,
-          type: 'image',
-          product_name: productName,
-          product_category: selectedCategory,
+      const token = await getAccessToken()
+
+      const response = await fetch('/api/v1/images/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productName,
+          productDescription,
+          productCategory: selectedCategory,
           marketplace: selectedMarketplace,
-          prompt_used: productDescription || productName,
-          credits_used: 1,
-          status: 'processing',
-          result_data: {
-            style: selectedStyle,
-            format: selectedFormat,
-            product_url: productUrl
-          }
-        })
-        .select()
-        .single()
-
-      if (contentError) throw contentError
-
-      // Deduct credit
-      await supabase.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: 1,
-        type: 'usage',
-        description: `Geracao de imagem: ${productName || 'Produto'}`,
-        reference_type: 'image',
-        reference_id: content.id
+          style: selectedStyle,
+          imageUrl: productUrl,
+        }),
       })
 
-      // Simulate AI generation (in production, this would call the AI provider)
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      const data = await response.json()
 
-      // Generate placeholder images using picsum
-      const generatedImageUrls = [
-        `https://picsum.photos/seed/${Date.now()}/1024/1024`,
-        `https://picsum.photos/seed/${Date.now() + 1}/1024/1024`,
-        `https://picsum.photos/seed/${Date.now() + 2}/1024/1024`,
-        `https://picsum.photos/seed/${Date.now() + 3}/1024/1024`,
-      ]
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar imagens')
+      }
 
-      const images = generatedImageUrls.map((url, i) => ({
-        id: `${content.id}-${i}`,
-        url,
-        prompt: productDescription || productName,
-        style: selectedStyle,
-        created_at: new Date().toISOString()
-      }))
-
-      // Update content record
-      await supabase
-        .from('generated_content')
-        .update({
-          status: 'completed',
-          result_url: images[0].url,
-          result_data: {
-            ...content.result_data,
-            images
-          }
-        })
-        .eq('id', content.id)
-
-      setGeneratedImages(images)
+      setGeneratedImages(data.images || [])
       fetchHistory()
+      refreshCredits()
 
       toast({
         title: "Imagens geradas!",
-        description: `${images.length} imagens criadas com sucesso`
+        description: `${(data.images || []).length} imagens criadas com sucesso`
       })
     } catch (error: any) {
       console.error('Error generating images:', error)
@@ -265,8 +230,14 @@ export default function ImagesPage() {
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
           <Zap className="w-5 h-5 text-emerald-400" />
-          <span className="text-white font-semibold">{credits}</span>
-          <span className="text-slate-400 text-sm">creditos</span>
+          {unlimited ? (
+            <span className="text-white font-semibold text-cyan-400">Ilimitado</span>
+          ) : (
+            <>
+              <span className="text-white font-semibold">{credits}</span>
+              <span className="text-slate-400 text-sm">creditos</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -426,7 +397,7 @@ export default function ImagesPage() {
             <Button
               className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold h-12"
               onClick={handleGenerate}
-              disabled={loading || credits < 1}
+              disabled={loading || !hasCredits(1)}
             >
               {loading ? (
                 <>
@@ -436,7 +407,7 @@ export default function ImagesPage() {
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 mr-2" />
-                  Gerar Imagens (1 credito)
+                  Gerar Imagens {unlimited ? '(Ilimitado)' : '(1 credito)'}
                 </>
               )}
             </Button>

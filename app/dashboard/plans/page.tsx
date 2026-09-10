@@ -27,7 +27,7 @@ const CREDIT_PACKS = [
 ]
 
 export default function PlansPage() {
-  const { user, credits } = useAuth()
+  const { user, credits, unlimited } = useAuth()
   const { toast } = useToast()
   const [plans, setPlans] = useState<Plan[]>([])
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
@@ -214,7 +214,11 @@ export default function PlansPage() {
               </div>
               <div>
                 <p className="text-slate-400 text-sm">Seus creditos</p>
-                <p className="text-4xl font-bold text-white">{credits}</p>
+                {unlimited ? (
+                  <p className="text-4xl font-bold text-cyan-400">Ilimitado</p>
+                ) : (
+                  <p className="text-4xl font-bold text-white">{credits}</p>
+                )}
               </div>
             </div>
           </div>

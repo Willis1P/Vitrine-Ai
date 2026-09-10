@@ -46,7 +46,7 @@ export default function DashboardLayout({
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
-  const { user, profile, credits, signOut } = useAuth()
+  const { user, profile, credits, unlimited, signOut } = useAuth()
 
   const initials = profile?.full_name
     ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -134,10 +134,12 @@ export default function DashboardLayout({
                 <Zap className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm font-medium text-white">Creditos</span>
               </div>
-              <div className="text-2xl font-bold text-emerald-400">{credits}</div>
+              <div className="text-2xl font-bold text-emerald-400">
+                {unlimited ? <span className="text-cyan-400">Ilimitado</span> : credits}
+              </div>
               <Link href="/dashboard/plans">
                 <Button size="sm" variant="ghost" className="mt-2 w-full text-xs text-slate-400 hover:text-white">
-                  Adicionar creditos
+                  {unlimited ? 'Modo de testes' : 'Adicionar creditos'}
                 </Button>
               </Link>
             </div>

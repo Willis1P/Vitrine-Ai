@@ -55,7 +55,7 @@ const BACKGROUNDS = [
 ]
 
 export default function ModelsPage() {
-  const { user, credits } = useAuth()
+  const { user, credits, unlimited, hasCredits, refreshCredits } = useAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [productName, setProductName] = useState('')
@@ -83,13 +83,18 @@ export default function ModelsPage() {
     if (data) setHistory(data)
   }
 
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.access_token || ''
+  }
+
   const handleGenerate = async () => {
     if (!user) {
       toast({ title: "Erro", description: "Voce precisa estar logado", variant: "destructive" })
       return
     }
 
-    if (credits < 3) {
+    if (!hasCredits(3)) {
       toast({ title: "Creditos insuficientes", description: "Modelos virtuais custam 3 creditos", variant: "destructive" })
       return
     }
@@ -102,61 +107,35 @@ export default function ModelsPage() {
     setLoading(true)
 
     try {
-      const { data: content, error: contentError } = await supabase
-        .from('generated_content')
-        .insert({
-          user_id: user.id,
-          type: 'model',
-          product_name: productName,
-          prompt_used: productDescription || productName,
-          credits_used: 3,
-          status: 'processing',
-          result_data: {
-            model_type: selectedModelType,
-            skin_tone: selectedSkinTone,
-            age_range: selectedAgeRange,
-            background: selectedBackground
-          }
-        })
-        .select()
-        .single()
+      const token = await getAccessToken()
 
-      if (contentError) throw contentError
-
-      await supabase.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: 3,
-        type: 'usage',
-        description: `Modelo virtual: ${productName || 'Produto'}`,
-        reference_type: 'model',
-        reference_id: content.id
+      const response = await fetch('/api/v1/models/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productName,
+          productDescription,
+          modelType: selectedModelType,
+          skinTone: selectedSkinTone,
+          ageRange: selectedAgeRange,
+          background: selectedBackground,
+        }),
       })
 
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      const data = await response.json()
 
-      const modelUrls = [
-        `https://picsum.photos/seed/model1${Date.now()}/1024/1024`,
-        `https://picsum.photos/seed/model2${Date.now()}/1024/1024`,
-        `https://picsum.photos/seed/model3${Date.now()}/1024/1024`,
-        `https://picsum.photos/seed/model4${Date.now()}/1024/1024`,
-      ]
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar modelos')
+      }
 
-      const models = modelUrls.map((url, i) => ({
-        id: `${content.id}-${i}`,
-        url,
-        modelType: selectedModelType,
-        created_at: new Date().toISOString()
-      }))
-
-      await supabase
-        .from('generated_content')
-        .update({ status: 'completed', result_url: models[0].url, result_data: { ...content.result_data, models } })
-        .eq('id', content.id)
-
-      setGeneratedModels(models)
+      setGeneratedModels(data.models || [])
       fetchHistory()
+      refreshCredits()
 
-      toast({ title: "Modelos gerados!", description: `${models.length} variacoes criadas` })
+      toast({ title: "Modelos gerados!", description: `${(data.models || []).length} variacoes criadas` })
     } catch (error: any) {
       toast({ title: "Erro", description: error.message, variant: "destructive" })
     } finally {
@@ -189,8 +168,14 @@ export default function ModelsPage() {
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
           <Zap className="w-5 h-5 text-cyan-400" />
-          <span className="text-white font-semibold">{credits}</span>
-          <span className="text-slate-400 text-sm">creditos</span>
+          {unlimited ? (
+            <span className="text-white font-semibold text-cyan-400">Ilimitado</span>
+          ) : (
+            <>
+              <span className="text-white font-semibold">{credits}</span>
+              <span className="text-slate-400 text-sm">creditos</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -286,7 +271,7 @@ export default function ModelsPage() {
             <Button
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-semibold h-12"
               onClick={handleGenerate}
-              disabled={loading || credits < 3}
+              disabled={loading || !hasCredits(3)}
             >
               {loading ? (
                 <>
@@ -296,7 +281,7 @@ export default function ModelsPage() {
               ) : (
                 <>
                   <Sparkles className="w-5 h-5 mr-2" />
-                  Gerar Modelos (3 creditos)
+                  Gerar Modelos {unlimited ? '(Ilimitado)' : '(3 creditos)'}
                 </>
               )}
             </Button>
