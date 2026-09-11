@@ -12,24 +12,13 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import {
-  User,
   Sparkles,
   Loader2,
   Download,
   Zap,
-  Check,
   Users,
   PersonStanding,
 } from 'lucide-react'
-
-const MODEL_TYPES = [
-  { id: 'woman', label: 'Mulher', icon: '👩' },
-  { id: 'man', label: 'Homem', icon: '👨' },
-  { id: 'young', label: 'Jovem', icon: '🧑' },
-  { id: 'executive', label: 'Executivo', icon: '👔' },
-  { id: 'influencer', label: 'Influenciador', icon: '📸' },
-  { id: 'fitness', label: 'Fitness', icon: '💪' },
-]
 
 const SKIN_TONES = [
   { id: 'light', label: 'Clara' },
@@ -60,7 +49,6 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(false)
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
-  const [selectedModelType, setSelectedModelType] = useState('woman')
   const [selectedSkinTone, setSelectedSkinTone] = useState('medium')
   const [selectedAgeRange, setSelectedAgeRange] = useState('26-35')
   const [selectedBackground, setSelectedBackground] = useState('studio')
@@ -118,7 +106,6 @@ export default function ModelsPage() {
         body: JSON.stringify({
           productName,
           productDescription,
-          modelType: selectedModelType,
           skinTone: selectedSkinTone,
           ageRange: selectedAgeRange,
           background: selectedBackground,
@@ -204,24 +191,6 @@ export default function ModelsPage() {
                   onChange={(e) => setProductDescription(e.target.value)}
                   className="bg-slate-800 border-slate-700 text-white min-h-20"
                 />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <Label className="text-slate-300">Tipo de Modelo</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {MODEL_TYPES.map((model) => (
-                  <Button
-                    key={model.id}
-                    type="button"
-                    variant={selectedModelType === model.id ? 'default' : 'outline'}
-                    className={`h-auto py-3 flex-col ${selectedModelType === model.id ? 'bg-cyan-500 hover:bg-cyan-600' : 'border-slate-700 text-slate-300'}`}
-                    onClick={() => setSelectedModelType(model.id)}
-                  >
-                    <span className="text-lg mb-1">{model.icon}</span>
-                    <span className="text-xs">{model.label}</span>
-                  </Button>
-                ))}
               </div>
             </div>
 

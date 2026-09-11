@@ -26,11 +26,14 @@ import {
   Menu,
   X,
   Film,
+  Users,
 } from 'lucide-react'
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Film, label: 'Gerar Vídeo IA', href: '/dashboard/pipeline' },
+  { icon: Video, label: 'Vídeo UGC', href: '/dashboard/videos' },
+  { icon: Users, label: 'Avatares', href: '/dashboard/avatars' },
   { icon: User, label: 'Modelos', href: '/dashboard/models' },
   { icon: FileText, label: 'Copywriting', href: '/dashboard/copywriting' },
   { icon: Layout, label: 'Templates', href: '/dashboard/templates' },
