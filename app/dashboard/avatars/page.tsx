@@ -44,15 +44,23 @@ export default function AvatarsPage() {
       toast({ title: "Imagem muito grande", description: "Maximo 10MB", variant: "destructive" })
       return
     }
-    const ext = file.name.split('.').pop() || 'jpg'
-    const fpath = `avatars/${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
     setUploading(true)
     try {
-      const { error } = await supabase.storage.from('vittrine-images').upload(fpath, file, { cacheControl: '3600', upsert: false })
-      if (error) throw new Error(error.message)
-      const { data } = supabase.storage.from('vittrine-images').getPublicUrl(fpath)
-      setFaceUrl(data.publicUrl)
-      setFacePreview(data.publicUrl)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || ''
+      const form = new FormData()
+      form.append('file', file)
+      form.append('folder', 'uploads/avatars')
+      const res = await fetch('/api/v1/storage/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Falha no upload')
+      const publicUrl = data.publicUrl as string
+      setFaceUrl(publicUrl)
+      setFacePreview(publicUrl)
       toast({ title: "Foto enviada!", description: "Rosto do avatar carregado" })
     } catch (e: any) {
       toast({ title: "Erro no upload", description: e.message, variant: "destructive" })
@@ -67,13 +75,15 @@ export default function AvatarsPage() {
     if (!faceUrl) { toast({ title: "Foto obrigatoria", description: "Envie uma foto do rosto", variant: "destructive" }); return }
     setSaving(true)
     try {
-      const { error } = await supabase.from('avatars').insert({
-        user_id: user.id,
-        name: name.trim(),
-        voice,
-        face_image_url: faceUrl,
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token || ''
+      const res = await fetch('/api/v1/avatars/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: name.trim(), voice, face_image_url: faceUrl }),
       })
-      if (error) throw new Error(error.message)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Falha ao criar avatar')
       toast({ title: "Avatar criado!", description: "Disponivel para os videos UGC" })
       setName('')
       setFacePreview(null)
