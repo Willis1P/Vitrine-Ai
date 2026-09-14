@@ -43,8 +43,13 @@ export function getClientWithToken(token: string): SupabaseClient {
 }
 
 export function getServiceClient(): SupabaseClient {
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceKey) {
+    throw new Error('FATAL: SUPABASE_SERVICE_ROLE_KEY is not set. Refusing to use anon key as service role.')
+  }
+  if (serviceKey === process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error('FATAL: SUPABASE_SERVICE_ROLE_KEY equals anon key — misconfiguration.')
+  }
   return createClient(supabaseUrl, serviceKey, {
     auth: {
       persistSession: false,

@@ -21,17 +21,33 @@ function sanitize(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "'\\''").replace(/%/g, '\\%')
 }
 
+function resolveFont(): string | null {
+  if (process.platform === 'win32') return 'C\\:/Windows/Fonts/arial.ttf'
+  // Linux (Vercel/Netlify/Docker) common paths; return null if none exists to avoid FFmpeg failure
+  const candidates = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
+  try {
+    const fsSync = require('fs')
+    for (const p of candidates) if (fsSync.existsSync(p)) return p
+  } catch {}
+  return null
+}
+
 function buildFilterForTake(text: string, duration: number, takeIndex: number): string {
   const takeLabel = ['HOOK', 'VALOR', 'CTA'][takeIndex] || 'TAKE'
   const safe = sanitize(text.slice(0, 60))
   const title = sanitize(takeLabel)
-  // Zoompan + fade + drawtext (take label + narração)
   const fps = 24
   const frames = Math.round(fps * duration)
   const zoompan = `zoompan=z='min(zoom+0.001,1.15)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=576x1024:fps=${fps}`
   const fade = `fade=t=in:st=0:d=0.4,fade=t=out:st=${Math.max(duration - 0.4, 0)}:d=0.4`
-  const drawLabel = `drawtext=text='${title}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8:fontfile='C\\:/Windows/Fonts/arialbd.ttf'`
-  const drawText = `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8:fontfile='C\\:/Windows/Fonts/arial.ttf'`
+  const font = resolveFont()
+  const fontBold = process.platform === 'win32' ? 'C\\:/Windows/Fonts/arialbd.ttf' : font
+  const drawLabel = fontBold
+    ? `drawtext=text='${title}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8:fontfile='${fontBold}'`
+    : `drawtext=text='${title}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8`
+  const drawText = font
+    ? `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8:fontfile='${font}'`
+    : `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8`
   return `${zoompan},${fade},${drawLabel},${drawText}`
 }
 

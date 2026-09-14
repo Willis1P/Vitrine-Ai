@@ -7,14 +7,28 @@ import { generateTakeVideo, assembleAd } from '@/lib/vibevid/assembler'
 import { promises as fs } from 'fs'
 import path from 'path'
 import os from 'os'
+// MuAPI catalog + studio adapter (free fallback keeps Pollinations)
+import { submitAndPoll as muapiSubmitAndPoll } from '@/lib/muapi-studio'
+import { t2iModels } from '@/lib/studio/models'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 function pollinationsImageUrl(prompt: string, seed: number, referenceImage?: string): string {
   let url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1080&height=1920&nologo=true&model=flux&seed=${seed}&enhance=true`
   if (referenceImage) url += `&image=${encodeURIComponent(referenceImage)}`
   return url
+}
+
+function resolveMuapiKey(req: NextRequest): string | null {
+  const header = req.headers.get('x-api-key') || req.headers.get('X-API-KEY')
+  if (header) return header
+  const cookie = req.headers.get('cookie') || ''
+  const m = cookie.match(/muapi_key=([^;]+)/)
+  if (m) {
+    try { return decodeURIComponent(m[1]) } catch { return m[1] }
+  }
+  return process.env.MUAPI_API_KEY || null
 }
 
 export async function POST(request: NextRequest) {
@@ -29,15 +43,28 @@ export async function POST(request: NextRequest) {
   if (!productUrl) return NextResponse.json({ error: 'productUrl é obrigatório' }, { status: 400 })
   if (!modelId && !modelUrl) return NextResponse.json({ error: 'Selecione a modelo cadastrada' }, { status: 400 })
 
-  // valida modelo pertence ao usuário se modelId
+  // valida modelo pertence ao usuário — suporta id sintético `${parentId}-${idx}` (gerado em /api/v1/models/generate)
   let finalModelUrl = modelUrl
   let modelName = 'Modelo'
   if (modelId) {
-    const { data: row } = await supabase.from('generated_content').select('result_url,result_data,product_name').eq('id', modelId).eq('user_id', user.id).maybeSingle()
+    // extrai UUID parent se modelId for sintético (ex: 550e8400-e29b-41d4-a716-446655440000-1)
+    const syntheticMatch = modelId.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-(\d+)$/i)
+    const parentId = syntheticMatch ? syntheticMatch[1] : modelId
+    let row: any = null
+    // tenta id exato primeiro (caso legacy onde modelo foi salvo como row única), depois parentId para sintéticos
+    const { data: exact } = await supabase.from('generated_content').select('id,result_url,result_data,product_name').eq('id', modelId).eq('user_id', user.id).maybeSingle()
+    if (exact) row = exact
+    else if (parentId !== modelId) {
+      const { data: parent } = await supabase.from('generated_content').select('id,result_url,result_data,product_name').eq('id', parentId).eq('user_id', user.id).maybeSingle()
+      if (parent) row = parent
+    } else {
+      const { data: legacy } = await supabase.from('generated_content').select('id,result_url,result_data,product_name').eq('id', parentId).eq('user_id', user.id).maybeSingle()
+      if (legacy) row = legacy
+    }
     if (!row) return NextResponse.json({ error: 'Modelo não encontrada' }, { status: 404 })
-    // procura dentro de result_data.models
     const arr = (row.result_data as any)?.models || []
     const found = arr.find((m: any) => m.id === modelId)
+    // se modelId sintético, found corresponde ao slot; se legacy parentId, usa result_url direto
     finalModelUrl = found?.url || row.result_url
     modelName = row.product_name || 'Modelo'
     if (!finalModelUrl) return NextResponse.json({ error: 'Modelo sem imagem' }, { status: 400 })
@@ -82,34 +109,56 @@ export async function POST(request: NextRequest) {
   }).select().single()
 
   try {
-    // Gera imagem âncora com referência dupla (produto + modelo) via Pollinations
+    const muapiKey = resolveMuapiKey(request)
+    const hasMuapi = !!muapiKey
     const seed = Math.floor(Math.random() * 100000)
-    // Pollinations flux com image param: usa productImage como referência principal
-    const anchorUrl = pollinationsImageUrl(finalPrompt, seed, analysis.image)
+    let anchorUrl = pollinationsImageUrl(finalPrompt, seed, analysis.image)
+    // Tenta MuAPI para âncora (qualidade superior) se chave disponível - catálogo t2iModels
+    if (hasMuapi) {
+      try {
+        const preferred = t2iModels.find(m=> m.id === 'flux-dev') || t2iModels[0]
+        const endpoint = (preferred as any)?.endpoint || preferred.id
+        const muapiRes: any = await muapiSubmitAndPoll(endpoint, { prompt: finalPrompt, aspect_ratio: '9:16' }, muapiKey!, undefined, 60)
+        const muapiUrl = muapiRes.url || muapiRes.outputs?.[0] || muapiRes.output?.url
+        if (muapiUrl) anchorUrl = muapiUrl
+      } catch (e) { console.warn('MuAPI anchor fallback to Pollinations', (e as any)?.message) }
+    }
     // Valida? Não bloqueia, apenas usa URL diretamente para vídeo (FFmpeg baixa)
 
     // Gera AIDA scripts para narração (Hook/Valor/CTA mas vídeo único contínuo)
     const scripts = await generateAidaScripts(productTitle, forged.category, modelName, 0)
 
-    // Gera 1 vídeo contínuo 12s com modelo segurando produto (Ken Burns sutil)
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'realistic-'))
-    const segment = await generateTakeVideo(finalPrompt + ` - model holding product naturally, authentic UGC, slight movement`, scripts[1] || enriched.slice(0, 60), 0, tmpDir, seed)
-    // Para ultra-realista, um único take contínuo já é suficiente; mas mantemos 3 takes concatenados para storytelling?
-    // Aqui fazemos 1 take de 12s para fidelidade (menos cortes = mais real)
-    const publicDir = path.join(process.cwd(), 'public', 'generated')
-    await fs.mkdir(publicDir, { recursive: true })
-    const finalName = `realistic_${Date.now()}.mp4`
-    const finalPath = path.join(publicDir, finalName)
-    await fs.copyFile(segment, finalPath)
-    // Se quiser 3 takes, descomente e use assembleAd
-
-    const videoUrl = `/generated/${finalName}`
+    // Tenta vídeo MuAPI (seedance-lite-t2v / i2v) se hasMuapi, senão free Ken Burns
+    let videoUrl: string | null = null
+    let provider: string = hasMuapi ? 'muapi' : 'realistic-free'
+    if (hasMuapi) {
+      try {
+        const videoModel = process.env.MUAPI_VIDEO_MODEL || 'seedance-lite-t2v'
+        const isI2V = !!anchorUrl
+        const payload: any = { prompt: finalPrompt, aspect_ratio: '9:16', duration: 5 }
+        if (isI2V) payload.image_url = anchorUrl
+        const muapiVideo: any = await muapiSubmitAndPoll(videoModel, payload, muapiKey!, undefined, 900)
+        videoUrl = muapiVideo.url || muapiVideo.outputs?.[0] || muapiVideo.output?.url || null
+        if (videoUrl) provider = 'muapi-video'
+      } catch (e) { console.warn('MuAPI video fallback to free', (e as any)?.message) }
+    }
+    if (!videoUrl) {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'realistic-'))
+      const segment = await generateTakeVideo(finalPrompt + ` - model holding product naturally, authentic UGC, slight movement`, scripts[1] || enriched.slice(0, 60), 0, tmpDir, seed)
+      const publicDir = path.join(process.cwd(), 'public', 'generated')
+      await fs.mkdir(publicDir, { recursive: true })
+      const finalName = `realistic_${Date.now()}.mp4`
+      const finalPath = path.join(publicDir, finalName)
+      await fs.copyFile(segment, finalPath)
+      videoUrl = `/generated/${finalName}`
+      provider = 'realistic-free'
+    }
 
     await supabase.from('generated_content').update({
       status: 'completed',
       result_url: videoUrl,
       result_data: {
-        provider: 'realistic-free',
+        provider,
         productUrl,
         productImage: analysis.image,
         modelUrl: finalModelUrl,

@@ -18,10 +18,15 @@ export async function POST(request: NextRequest) {
   if (!user || !supabase) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
   let body: any
-  try { body = await request.json() } catch { return NextResponse.json({ error: 'Body inválido' }, { status: 400 }) }
+  try { body = await request.json() } catch { return NextResponse.json({ error: 'Body inválido. Envie JSON com avatarId e line opcional.' }, { status: 400 }) }
 
-  const avatarId = (body.avatarId || '').toString()
-  if (!avatarId) return NextResponse.json({ error: 'Informe o avatarId' }, { status: 400 })
+  const avatarId = (body.avatarId || '').toString().trim()
+  if (!avatarId) return NextResponse.json({ error: 'Informe o avatarId (UUID do avatar).' }, { status: 400 })
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(avatarId)) {
+    return NextResponse.json({ error: 'avatarId inválido (UUID esperado).' }, { status: 400 })
+  }
+  const lineRaw = body.line ? String(body.line).trim().slice(0, 600) : undefined
+  if (lineRaw && lineRaw.length < 2) return NextResponse.json({ error: 'Frase muito curta.' }, { status: 400 })
 
   const { data: avatar } = await supabase
     .from('avatars')
@@ -31,13 +36,28 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
   if (!avatar) return NextResponse.json({ error: 'Avatar não encontrado' }, { status: 404 })
 
-  const python = process.env.W2LIP_PYTHON || 'C:\\vitrine\\python310\\python.exe'
-  const runPy = process.env.W2LIP_RUN || 'C:\\vitrine\\w2lip\\proj\\run.py'
-  const ckpt = process.env.W2LIP_CHECKPOINT || 'C:\\vitrine\\w2lip\\checkpoints\\wav2lip_gan.pth'
+  const python = process.env.W2LIP_PYTHON || (process.platform === 'win32' ? 'C:\\vitrine\\python310\\python.exe' : 'python3')
+  const runPy = process.env.W2LIP_RUN || (process.platform === 'win32' ? 'C:\\vitrine\\w2lip\\proj\\run.py' : path.join(process.cwd(), 'tools', 'wav2lip', 'run.py'))
+  const ckpt = process.env.W2LIP_CHECKPOINT || (process.platform === 'win32' ? 'C:\\vitrine\\w2lip\\checkpoints\\wav2lip_gan.pth' : path.join('C:', 'vitrine', 'w2lip', 'checkpoints', 'wav2lip_gan.pth'))
 
-  if (!(await fs.stat(runPy).catch(() => null))) {
+  const runPyStat = await fs.stat(runPy).catch(() => null)
+  if (!runPyStat) {
     return NextResponse.json({
-      error: 'Pipelines de lip-sync não instalados. Rode: powershell -ExecutionPolicy Bypass -File tools/wav2lip/setup.ps1',
+      error: 'Pipelines de lip-sync não instalados neste servidor. Rode localmente: powershell -ExecutionPolicy Bypass -File tools/wav2lip/setup.ps1. (Wav2Lip requer Python 3.10 + checkpoint).',
+      hint: 'Este recurso funciona apenas em ambiente local Windows com C:\\vitrine\\ instalado. Em produção (Vercel/Netlify) retorna 501.',
+    }, { status: 501 })
+  }
+  const ckptStat = await fs.stat(ckpt).catch(() => null)
+  if (!ckptStat) {
+    return NextResponse.json({
+      error: 'Checkpoint Wav2Lip não encontrado. Baixe wav2lip_gan.pth (435MB) para ' + ckpt,
+      hint: 'Rode tools/wav2lip/setup.ps1 ou defina W2LIP_CHECKPOINT.',
+    }, { status: 501 })
+  }
+  const pyStat = process.platform === 'win32' ? await fs.stat(python).catch(() => null) : null
+  if (process.platform === 'win32' && !pyStat) {
+    return NextResponse.json({
+      error: `Python não encontrado em ${python}. Instale em C:\\vitrine\\python310 ou defina W2LIP_PYTHON.`,
     }, { status: 501 })
   }
 
@@ -49,8 +69,8 @@ export async function POST(request: NextRequest) {
     const faceJpg = path.join(tmp, 'face.jpg')
     await fs.writeFile(faceJpg, Buffer.from(await faceRes.arrayBuffer()))
 
-    const line = body.line || `Olá! Meu nome é ${avatar.name} e estou pronto para criar vídeos para a sua loja.`
-    const speech = await generateSpeech(String(line), avatar.voice)
+    const line = lineRaw || `Olá! Meu nome é ${avatar.name} e estou pronto para criar vídeos para a sua loja.`
+    const speech = await generateSpeech(String(line), avatar.voice || 'pt-BR-FranciscaNeural')
     if (!speech) throw new Error('Falha ao gerar a narração (TTS indisponível)')
     const narrationMp3 = path.join(tmp, 'narration.mp3')
     await fs.writeFile(narrationMp3, speech)
@@ -60,7 +80,9 @@ export async function POST(request: NextRequest) {
     await fs.mkdir(publicDir, { recursive: true })
     const outPath = path.join(publicDir, outName)
 
-    const size = Array.isArray(body.size) && body.size.length === 2 ? [Number(body.size[0]), Number(body.size[1])] : [576, 1024]
+    const sizeRaw = Array.isArray(body.size) && body.size.length === 2 ? [Number(body.size[0]), Number(body.size[1])] : [576, 1024]
+    const size = [Math.min(Math.max(sizeRaw[0] || 576, 256), 1280), Math.min(Math.max(sizeRaw[1] || 1024, 256), 1920)]
+    if (size.some(n => !Number.isFinite(n))) return NextResponse.json({ error: 'size inválido (esperado [width,height]).' }, { status: 400 })
     const args = [
       runPy,
       '--face', faceJpg,
@@ -78,18 +100,21 @@ export async function POST(request: NextRequest) {
 
     const { data: content } = await supabase.from('generated_content').insert({
       user_id: user.id,
-      type: 'avatar',
+      type: 'video',
       product_name: avatar.name,
       prompt_used: line,
       credits_used: 0,
       status: 'completed',
       result_url: `/generated/${outName}`,
-      result_data: { provider: 'wav2lip-local', avatarId, voice: avatar.voice },
+      result_data: { provider: 'wav2lip-local', avatarId, voice: avatar.voice, category: 'avatar' },
     }).select().single()
 
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
     return NextResponse.json({ videoUrl: `/generated/${outName}`, id: content?.id })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Erro ao animar avatar' }, { status: 500 })
+    const msg = e?.killed ? 'Timeout ao animar avatar (10 min). Tente com frase mais curta.' : (e?.message || 'Erro ao animar avatar')
+    // Never leak stack or python traceback details beyond message
+    const safe = String(msg).slice(0, 500)
+    return NextResponse.json({ error: safe }, { status: 500 })
   }
 }

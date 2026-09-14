@@ -132,14 +132,21 @@ function sanitize(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "'\\''").replace(/%/g, '\\%')
 }
 
+function resolveFont(): string | null {
+  if (process.platform === 'win32') return 'C\\:/Windows/Fonts/arial.ttf'
+  try { const fsSync = require('fs'); for (const p of ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']) if (fsSync.existsSync(p)) return p } catch {}
+  return null
+}
 function buildTakeFilter(text: string, takeIndex: number, width: number, height: number, duration: number): string {
   const label = sanitize(TAKE_LABELS[takeIndex] || 'TAKE')
   const safe = sanitize(text.slice(0, 64))
   const frames = Math.round(TAKE_FPS * duration)
   const zoompan = `zoompan=z='min(zoom+0.001,1.15)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${width}x${height}:fps=${TAKE_FPS}`
   const fade = `fade=t=in:st=0:d=0.4,fade=t=out:st=${Math.max(duration - 0.4, 0)}:d=0.4`
-  const drawLabel = `drawtext=text='${label}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8:fontfile='C\\:/Windows/Fonts/arialbd.ttf'`
-  const drawText = `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8:fontfile='C\\:/Windows/Fonts/arial.ttf'`
+  const font = resolveFont()
+  const fontBold = process.platform === 'win32' ? 'C\\:/Windows/Fonts/arialbd.ttf' : font
+  const drawLabel = fontBold ? `drawtext=text='${label}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8:fontfile='${fontBold}'` : `drawtext=text='${label}':x=24:y=24:fontsize=18:fontcolor=white:box=1:boxcolor=black@0.6:boxborderw=8`
+  const drawText = font ? `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8:fontfile='${font}'` : `drawtext=text='${safe}':x=(w-text_w)/2:y=h-th-80:fontsize=16:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=8`
   return `${zoompan},${fade},${drawLabel},${drawText}`
 }
 

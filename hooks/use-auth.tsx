@@ -38,15 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const refreshCredits = async () => {
-    if (!user) return
-
-    const { data, error } = await supabase.rpc('get_user_credits', {
-      p_user_id: user.id
-    })
-
-    if (!error && typeof data === 'number') {
-      setCredits(data)
-    }
+    // evita stale closure em user (onAuthStateChange chama com delay)
+    const { data: { user: freshUser } } = await supabase.auth.getUser()
+    const uid = freshUser?.id || user?.id
+    if (!uid) return
+    const { data, error } = await supabase.rpc('get_user_credits', { p_user_id: uid })
+    if (!error && typeof data === 'number') setCredits(data)
   }
 
   useEffect(() => {

@@ -45,6 +45,32 @@ export type Database = {
           updated_at?: string
         }
       }
+      avatars: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          voice: string
+          face_image_url: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          voice?: string
+          face_image_url: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          voice?: string
+          face_image_url?: string
+          created_at?: string
+        }
+      }
       plans: {
         Row: {
           id: string

@@ -5,6 +5,7 @@ import { scrapeProductUrl, isProductPageUrl } from '@/lib/product-scraper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   const { user, supabase } = await getUserFromRequest(request.headers.get('authorization'))

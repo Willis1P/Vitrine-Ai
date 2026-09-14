@@ -23,8 +23,20 @@ export default function PipelinePage() {
   const [realisticLoading, setRealisticLoading] = useState(false)
   const [realisticResult, setRealisticResult] = useState<any>(null)
   const [history, setHistory] = useState<any[]>([])
+  // MuAPI catalog integration (free fallback keeps Pollinations)
+  const [muapiStatus, setMuapiStatus] = useState<{hasServerKey:boolean; total?:number} | null>(null)
+  const [muapiCatalog, setMuapiCatalog] = useState<any>(null)
 
-  useEffect(()=>{ if(user){ fetchModels(); fetchHistory() } },[user])
+  useEffect(()=>{ if(user){ fetchModels(); fetchHistory(); fetchMuapiCatalog() } },[user])
+
+  const fetchMuapiCatalog = async()=>{
+    try{
+      const res=await fetch('/api/v1/muapi/models')
+      const data=await res.json()
+      setMuapiStatus({hasServerKey: !!data.hasServerKey, total: data.counts?.total})
+      setMuapiCatalog(data)
+    }catch{ setMuapiStatus({hasServerKey:false})}
+  }
 
   const fetchModels = async()=>{
     const {data:{session}}=await supabase.auth.getSession()
@@ -60,11 +72,14 @@ export default function PipelinePage() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       const token=session?.access_token||''
-      const res=await fetch('/api/v1/pipeline/generate-realistic',{method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:JSON.stringify({ productUrl, modelId: selectedModel.id })})
+      const byok = typeof window !== 'undefined' ? localStorage.getItem('muapi_key') : null
+      const headers: Record<string,string> = {'Content-Type':'application/json', Authorization:`Bearer ${token}`}
+      if (byok) headers['x-api-key'] = byok
+      const res=await fetch('/api/v1/pipeline/generate-realistic',{method:'POST', headers, body:JSON.stringify({ productUrl, modelId: selectedModel.id })})
       const data=await res.json()
       if(!res.ok) throw new Error(data.error||'Erro ao gerar vídeo')
       setRealisticResult(data); fetchHistory(); refreshCredits()
-      toast({title:'Vídeo ultra-realista gerado!', description:`${data.productTitle} + ${data.modelUsed}`})
+      toast({title:'Vídeo ultra-realista gerado!', description:`${data.productTitle} + ${data.modelUsed} • ${data.result_data?.provider || (muapiStatus?.hasServerKey||byok ? 'MuAPI':'Pollinations free')}`})
     }catch(e:any){ toast({title:'Erro vídeo', description:e.message, variant:'destructive'})}
     finally{ setRealisticLoading(false)}
   }
@@ -78,6 +93,15 @@ export default function PipelinePage() {
             Vídeo Realista com Modelo IA
           </h1>
           <p className="text-slate-400 mt-1">URL → imagem real do produto → modelo cadastrada → vídeo 9:16 TikTok pronto para baixar</p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {muapiStatus ? (
+              <Badge className={muapiStatus.hasServerKey || (typeof window!=='undefined' && !!localStorage.getItem('muapi_key')) ? 'bg-emerald-500/20 text-emerald-400 border-0' : 'bg-amber-500/20 text-amber-300 border-0'}>
+                <Zap className="w-3 h-3 mr-1"/>{muapiStatus.hasServerKey || (typeof window!=='undefined' && !!localStorage.getItem('muapi_key')) ? `MuAPI ativo • ${muapiStatus.total||400}+ modelos • x-api-key` : 'Pollinations free • configure MUAPI_API_KEY ou BYOK em /studio'}
+              </Badge>
+            ) : <Badge variant="secondary" className="bg-slate-800 text-slate-400">Carregando catálogo...</Badge>}
+            {muapiCatalog && <span className="text-xs text-slate-500">t2i:{muapiCatalog.counts?.t2i} t2v:{muapiCatalog.counts?.t2v} lipsync:{muapiCatalog.counts?.lipsync}</span>}
+            <a href="/studio" className="text-xs text-fuchsia-400 hover:underline">Abrir /studio (400 modelos)</a>
+          </div>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
           <Zap className="w-5 h-5 text-fuchsia-400"/>

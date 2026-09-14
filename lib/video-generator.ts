@@ -91,6 +91,17 @@ function fitSubtitle(text: string): string {
   return text.length > MAX_SUBTITLE ? text.slice(0, MAX_SUBTITLE).trim() + '...' : text
 }
 
+function resolveFont(): string | null {
+  if (process.platform === 'win32') return 'C\\:/Windows/Fonts/arial.ttf'
+  try {
+    const fsSync = require('fs')
+    for (const p of ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']) {
+      if (fsSync.existsSync(p)) return p
+    }
+  } catch {}
+  return null
+}
+
 function buildFilter(params: VideoGenerationParams, fps: number, totalFrames: number): string {
   const duration = params.duration
   const title = fitTitle(params.productName)
@@ -106,19 +117,38 @@ function buildFilter(params: VideoGenerationParams, fps: number, totalFrames: nu
   const yExpr = `y='ih/2-(ih/zoom/2)'`
   const zoompan = `zoompan=z='${zoom}':d=${frameCount}:${xExpr}:${yExpr}:s=${IMAGE_WIDTH}x${IMAGE_HEIGHT}:fps=${fpsStr}`
 
-  let titleBoxStyle = `drawtext=text='${sanitizeDrawText(
-    title
-  )}':x=(w-text_w)/2:y=h-th-260:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=16:fontfile='C\\:/Windows/Fonts/arialbd.ttf'`
+  const font = resolveFont()
+  const fontBold = process.platform === 'win32' ? 'C\\:/Windows/Fonts/arialbd.ttf' : font
 
-  let subtitleFilter = `drawtext=text='${sanitizeDrawText(
-    subtitle
-  )}':x=(w-text_w)/2:y=h-th-120:fontsize=24:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=10:fontfile='C\\:/Windows/Fonts/arial.ttf'`
+  let titleBoxStyle: string
+  if (fontBold) {
+    titleBoxStyle = `drawtext=text='${sanitizeDrawText(title)}':x=(w-text_w)/2:y=h-th-260:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=16:fontfile='${fontBold}'`
+  } else {
+    titleBoxStyle = `drawtext=text='${sanitizeDrawText(title)}':x=(w-text_w)/2:y=h-th-260:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=16`
+  }
+
+  let subtitleFilter: string
+  if (font) {
+    subtitleFilter = `drawtext=text='${sanitizeDrawText(subtitle)}':x=(w-text_w)/2:y=h-th-120:fontsize=24:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=10:fontfile='${font}'`
+  } else {
+    subtitleFilter = `drawtext=text='${sanitizeDrawText(subtitle)}':x=(w-text_w)/2:y=h-th-120:fontsize=24:fontcolor=white:box=1:boxcolor=purple@0.55:boxborderw=10`
+  }
 
   if (params.style === 'tiktok') {
-    titleBoxStyle += `:y=120`
-    subtitleFilter = `drawtext=text='${sanitizeDrawText(
-      subtitle
-    )}':x=(w-text_w)/2:y=h-th-140:fontsize=26:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=12:fontfile='C\\:/Windows/Fonts/arialbd.ttf'`
+    // tiktok variant: keep font handling consistent
+    if (fontBold) {
+      subtitleFilter = `drawtext=text='${sanitizeDrawText(subtitle)}':x=(w-text_w)/2:y=h-th-140:fontsize=26:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=12:fontfile='${fontBold}'`
+    } else {
+      subtitleFilter = `drawtext=text='${sanitizeDrawText(subtitle)}':x=(w-text_w)/2:y=h-th-140:fontsize=26:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=12`
+    }
+    // title offset for tiktok stays at y offset emulation: keep title at top-like position via extra param
+    // fontfile already set above; append y=120 emulation via additional y adjustment (titleBoxStyle already has y)
+    // For simplicity, rebuild titleBoxStyle with y=120 for tiktok
+    if (fontBold) {
+      titleBoxStyle = `drawtext=text='${sanitizeDrawText(title)}':x=(w-text_w)/2:y=120:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=16:fontfile='${fontBold}'`
+    } else {
+      titleBoxStyle = `drawtext=text='${sanitizeDrawText(title)}':x=(w-text_w)/2:y=120:fontsize=34:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=16`
+    }
   }
 
   const fadeIn = `fade=t=in:st=0:d=0.6`

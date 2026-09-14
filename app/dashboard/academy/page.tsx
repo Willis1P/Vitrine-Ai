@@ -40,14 +40,32 @@ export default function AcademyPage() {
 
   const fetchCourses = async () => {
     try {
-      const { data: coursesData } = await supabase
+      // Evita embed 406 em algumas instâncias PostgREST: busca courses e lessons separados
+      const { data: coursesData, error: cErr } = await supabase
         .from('courses')
-        .select('*, lessons:course_lessons(*)')
+        .select('*')
         .eq('is_published', true)
         .order('sort_order')
+      if (cErr) throw cErr
+
+      let lessonMap = new Map<string, any[]>()
+      if (coursesData && coursesData.length) {
+        const ids = coursesData.map((c: any) => c.id)
+        const { data: lessonsData } = await supabase
+          .from('course_lessons')
+          .select('*')
+          .in('course_id', ids)
+          .eq('is_published', true)
+          .order('sort_order')
+        for (const l of lessonsData || []) {
+          const arr = lessonMap.get(l.course_id) || []
+          arr.push(l)
+          lessonMap.set(l.course_id, arr)
+        }
+      }
 
       if (coursesData) {
-        let coursesWithProgress = coursesData as any[]
+        let coursesWithProgress = coursesData.map((c: any) => ({ ...c, lessons: lessonMap.get(c.id) || [] })) as any[]
 
         if (user) {
           const { data: progressData } = await supabase

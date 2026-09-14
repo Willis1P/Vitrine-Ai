@@ -32,6 +32,7 @@ import {
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: Film, label: 'Gerar Vídeo IA', href: '/dashboard/pipeline' },
+  { icon: Video, label: 'Studio MuAPI', href: '/studio' },
   { icon: User, label: 'Modelos', href: '/dashboard/models' },
   { icon: FileText, label: 'Copywriting', href: '/dashboard/copywriting' },
   { icon: Layout, label: 'Templates', href: '/dashboard/templates' },
